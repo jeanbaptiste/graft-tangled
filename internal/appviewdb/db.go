@@ -7,17 +7,17 @@
 // this database — a much simpler source of truth for "what new comments
 // exist" than running a second firehose consumer here.
 //
-// Writing: our own PDS is self-hosted and not crawled by the public
-// AT Proto relay network (verified directly against the production relay:
-// it has no record of our DID at all), so records we write there never
-// reach the appview through the normal firehose path the way a real,
-// network-connected user's comment does. Rather than stand up a full
-// relay just to satisfy jetstream's expectations (it wants a
-// multi-PDS-aggregating relay — a self-hosted single PDS's own firehose
-// isn't enough; confirmed by testing bluesky-social/jetstream directly
-// against our PDS, which fails on the relay-only listHosts endpoint), we
-// insert our own repo/issue writes into this database directly right
-// after the PDS write succeeds. The two must be kept in sync by hand:
+// Writing: this used to also be motivated by our PDS not being crawled
+// by the public AT Proto relay network at all — that's no longer true
+// (com.atproto.sync.getHostStatus against relay1.us-west.bsky.network
+// now reports status "active" for pds.cyberwild.org, ingesting all 6
+// accounts; checked directly, 2026-09-14 — com.atproto.sync.getHost,
+// which doesn't exist, 404ing was mistaken for this earlier). The
+// dual-write is kept anyway: it's synchronous (the appview reflects our
+// own write immediately, no firehose lag to reason about) and doesn't
+// depend on the relay's crawl staying healthy. Revisit whether the
+// firehose alone is now reliable enough to drop this. The two must be
+// kept in sync by hand:
 // every field written to the PDS record (client.go) has a matching column
 // written here (this file) — see InsertRepo/InsertIssue/InsertComment.
 package appviewdb

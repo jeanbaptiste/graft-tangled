@@ -90,6 +90,20 @@ func (c *Client) Outbox(ctx context.Context, series string) (*ap.OrderedCollecti
 // ReplyToIssue delivers a signed Create{Note} to the series inbox whose
 // inReplyTo points at issueOrPatchNoteURI. Graft routes it as a comment on
 // the underlying Forgejo/Radicle issue or patch.
+//
+// Deliberately still ActivityPub, not AT Proto, even though everything
+// else about this bridge (including the account it authenticates as) is
+// AT Proto — considered and rejected. Graft's AT Proto reply path
+// (pollSeriesReplies, cmd/sync/bluesky_replies.go) only fires from
+// app.bsky.notification.listNotifications' "reply" reason, which AT
+// Proto only generates when a reply's reply.parent points at a post
+// Graft itself published. Graft posts to Bluesky for patches and git
+// pushes (internal/sync/patches.go, git.go) but never for issues — and
+// issues are most of what this bridge mirrors. With no Graft-owned
+// parent post to reply to for an issue, there is no AT Proto notification
+// to detect in the first place, so a native AT Proto reply here would
+// silently never reach Graft for the majority of what this bridge
+// relays. Revisit if Graft ever posts an AT Proto note per issue too.
 func (c *Client) ReplyToIssue(ctx context.Context, series, issueOrPatchNoteURI, content string) error {
 	a, err := c.Actor(ctx, series)
 	if err != nil {
