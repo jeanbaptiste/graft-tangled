@@ -156,6 +156,28 @@ func (d *DB) InsertIssue(ctx context.Context, did, rkey, repoDid, title, body st
 	return issueID, nil
 }
 
+// IssueLocation resolves an issue's AT-URI to what its web page URL is
+// built from: the owning repo's DID and name, and the per-repo issue
+// number. ok is false when the appview doesn't know the issue (yet).
+func (d *DB) IssueLocation(ctx context.Context, issueAt string) (ownerDID, repoName string, issueID int64, ok bool, err error) {
+	did, rkey, found := strings.Cut(strings.TrimPrefix(issueAt, "at://"), "/sh.tangled.repo.issue/")
+	if !found {
+		return "", "", 0, false, nil
+	}
+	row := d.sql.QueryRowContext(ctx, `
+		SELECT r.did, r.name, i.issue_id
+		FROM issues i JOIN repos r ON r.repo_did = i.repo_did
+		WHERE i.did = ? AND i.rkey = ? AND i.deleted IS NULL
+		LIMIT 1`, did, rkey)
+	switch err := row.Scan(&ownerDID, &repoName, &issueID); {
+	case err == sql.ErrNoRows:
+		return "", "", 0, false, nil
+	case err != nil:
+		return "", "", 0, false, fmt.Errorf("lookup issue %s: %w", issueAt, err)
+	}
+	return ownerDID, repoName, issueID, true, nil
+}
+
 // InsertComment mirrors a sh.tangled.repo.issue.comment PDS write into the
 // appview's issue_comments table.
 func (d *DB) InsertComment(ctx context.Context, did, rkey, issueAt, body string) error {

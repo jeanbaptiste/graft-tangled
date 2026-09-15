@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 
 	"grafttangled/internal/ap"
@@ -52,11 +53,13 @@ type Bridge struct {
 	Series    []SeriesConfig
 	Opts      Options
 
-	Graft       graftAPI
-	Tangled     tangledAPI
-	AppviewDB   *appviewdb.DB
-	State       *state.State
-	Log         *slog.Logger
+	Graft     graftAPI
+	Tangled   tangledAPI
+	AppviewDB *appviewdb.DB
+	// WebURL is the Tangled web UI base URL trackback links point at.
+	WebURL string
+	State  *state.State
+	Log    *slog.Logger
 }
 
 // RunOnce performs one full reconciliation pass.
@@ -192,9 +195,7 @@ func (b *Bridge) reverseTangledToGraft(ctx context.Context) error {
 			continue
 		}
 		content := truncateRunes("**via Tangled, "+c.DID+":**\n\n"+c.Body, b.maxContent())
-		// Generate trackback URL to the original Tangled comment (via Bluesky Web AppView)
-		sourceURL := fmt.Sprintf("https://bsky.app/profile/%s/post/%s", c.DID, rkeyFromURI(c.AtURI))
-		if err := b.Graft.ReplyToIssue(ctx, series, noteURI, content, sourceURL); err != nil {
+		if err := b.Graft.ReplyToIssue(ctx, series, noteURI, content, b.commentURL(ctx, c)); err != nil {
 			b.logf(slog.LevelError, "deliver tangled comment to graft failed", "comment", c.AtURI, "err", err)
 			continue
 		}
@@ -262,4 +263,28 @@ func rkeyFromURI(atURI string) string {
 		return atURI
 	}
 	return atURI[i+1:]
+}
+
+// commentURL is the trackback Graft shows next to a relayed Tangled
+// comment: the comment's issue page on the Tangled web UI. A Tangled
+// comment is a sh.tangled.repo.issue.comment record, not a Bluesky post,
+// so there is no bsky.app permalink for it. Empty (no trackback) when no
+// web URL is configured or the issue can't be resolved.
+func (b *Bridge) commentURL(ctx context.Context, c appviewdb.Comment) string {
+	if b.WebURL == "" || b.AppviewDB == nil {
+		return ""
+	}
+	owner, repo, issueID, ok, err := b.AppviewDB.IssueLocation(ctx, c.IssueAt)
+	if err != nil {
+		b.logf(slog.LevelWarn, "resolve trackback for tangled comment", "comment", c.AtURI, "err", err)
+		return ""
+	}
+	if !ok {
+		return ""
+	}
+	return issueWebURL(b.WebURL, owner, repo, issueID)
+}
+
+func issueWebURL(webURL, ownerDID, repoName string, issueID int64) string {
+	return fmt.Sprintf("%s/%s/%s/issues/%d", strings.TrimRight(webURL, "/"), ownerDID, url.PathEscape(repoName), issueID)
 }

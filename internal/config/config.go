@@ -62,6 +62,10 @@ type Config struct {
 		Handle          string `json:"handle"`
 		AppPasswordFile string `json:"app_password_file"`
 		AppviewDBPath   string `json:"appview_db_path"`
+		// WebBaseURL is the Tangled web UI (the appview) that trackback
+		// links point at, e.g. https://tangled.example.org. Optional:
+		// without it no trackback is sent.
+		WebBaseURL string `json:"web_base_url"`
 	} `json:"tangled"`
 }
 

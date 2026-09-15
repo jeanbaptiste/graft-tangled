@@ -106,6 +106,7 @@ func main() {
 		Graft:     gc,
 		Tangled:   tc,
 		AppviewDB: adb,
+		WebURL:    cfg.Tangled.WebBaseURL,
 		State:     st,
 		Log:       log,
 	}
