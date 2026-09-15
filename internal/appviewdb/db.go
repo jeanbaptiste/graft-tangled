@@ -51,7 +51,8 @@ func Open(path string) (*DB, error) {
 
 func (d *DB) Close() error { return d.sql.Close() }
 
-// Comment is one row from the appview's issue_comments table.
+// Comment is one comment on a watched issue, from the appview's comments
+// table.
 type Comment struct {
 	ID      int64
 	DID     string // author's DID
@@ -60,16 +61,23 @@ type Comment struct {
 	AtURI   string // this comment's own AT-URI
 }
 
-// NewComments returns every issue_comments row with id > sinceID, oldest
-// first, whose issue_at is one of issueAtURIs (the issues this bridge
-// created and is watching). Soft-deleted comments are excluded.
+// commentCollection is the record type Tangled writes issue (and pull)
+// comments as. It replaced sh.tangled.repo.issue.comment: the appview still
+// acknowledges old-style records on ingest but stores nothing for them, and
+// its issue_comments table is no longer written — which is why reading
+// that table never returned a single comment.
+const commentCollection = "sh.tangled.feed.comment"
+
+// NewComments returns every comment row with id > sinceID, oldest first,
+// whose subject is one of issueAtURIs (the issues this bridge created and
+// is watching). Soft-deleted comments are excluded.
 func (d *DB) NewComments(ctx context.Context, sinceID int64, issueAtURIs []string) ([]Comment, error) {
 	if len(issueAtURIs) == 0 {
 		return nil, nil
 	}
 	placeholders := make([]byte, 0, len(issueAtURIs)*2)
-	args := make([]any, 0, len(issueAtURIs)+1)
-	args = append(args, sinceID)
+	args := make([]any, 0, len(issueAtURIs)+2)
+	args = append(args, sinceID, commentCollection)
 	for i, uri := range issueAtURIs {
 		if i > 0 {
 			placeholders = append(placeholders, ',')
@@ -78,9 +86,9 @@ func (d *DB) NewComments(ctx context.Context, sinceID int64, issueAtURIs []strin
 		args = append(args, uri)
 	}
 	query := fmt.Sprintf(`
-		SELECT id, did, issue_at, body, at_uri
-		FROM issue_comments
-		WHERE id > ? AND issue_at IN (%s) AND deleted IS NULL
+		SELECT id, did, subject_uri, body_text, rkey
+		FROM comments
+		WHERE id > ? AND collection = ? AND subject_uri IN (%s) AND deleted IS NULL
 		ORDER BY id ASC`, string(placeholders))
 	rows, err := d.sql.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -90,9 +98,11 @@ func (d *DB) NewComments(ctx context.Context, sinceID int64, issueAtURIs []strin
 	var out []Comment
 	for rows.Next() {
 		var c Comment
-		if err := rows.Scan(&c.ID, &c.DID, &c.IssueAt, &c.Body, &c.AtURI); err != nil {
+		var rkey string
+		if err := rows.Scan(&c.ID, &c.DID, &c.IssueAt, &c.Body, &rkey); err != nil {
 			return nil, fmt.Errorf("scan comment row: %w", err)
 		}
+		c.AtURI = "at://" + c.DID + "/" + commentCollection + "/" + rkey
 		out = append(out, c)
 	}
 	return out, rows.Err()
