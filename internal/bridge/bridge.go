@@ -167,23 +167,34 @@ func (b *Bridge) reverseTangledToGraft(ctx context.Context) error {
 	}
 
 	delivered := 0
+	// The cursor only moves past comments that are fully dealt with. A
+	// failed delivery (graft briefly unreachable, say) or the per-pass
+	// limit freezes it there, so those comments are read again next pass;
+	// ones already relayed are skipped by their delivered hash, never sent
+	// twice.
 	maxID := cursor
-	for _, c := range comments {
-		if c.ID > maxID {
-			maxID = c.ID
+	frozen := false
+	advance := func(id int64) {
+		if !frozen && id > maxID {
+			maxID = id
 		}
+	}
+	for _, c := range comments {
 		if c.DID == b.Tangled.DID() {
 			// Our own comment (from the graft->tangled reverse-mirror
 			// path below, if that's ever added) — never relay it back,
 			// that would loop.
+			advance(c.ID)
 			continue
 		}
 		noteURI, ok := b.State.NoteForIssue(c.IssueAt)
 		if !ok {
+			advance(c.ID)
 			continue
 		}
 		hash := hashContent(c.AtURI)
 		if b.State.IsDelivered(hash) {
+			advance(c.ID)
 			continue
 		}
 		if b.Opts.MaxDeliveriesPerPass > 0 && delivered >= b.Opts.MaxDeliveriesPerPass {
@@ -192,16 +203,19 @@ func (b *Bridge) reverseTangledToGraft(ctx context.Context) error {
 		}
 		series, _, ok := ap.ParseNoteURI(b.GraftHost, noteURI)
 		if !ok {
+			advance(c.ID)
 			continue
 		}
 		content := truncateRunes("**via Tangled, "+c.DID+":**\n\n"+c.Body, b.maxContent())
 		if err := b.Graft.ReplyToIssue(ctx, series, noteURI, content, b.commentURL(ctx, c)); err != nil {
 			b.logf(slog.LevelError, "deliver tangled comment to graft failed", "comment", c.AtURI, "err", err)
+			frozen = true
 			continue
 		}
 		if err := b.State.MarkDelivered(hash); err != nil {
 			return err
 		}
+		advance(c.ID)
 		delivered++
 		b.logf(slog.LevelInfo, "relayed tangled comment to graft", "comment", c.AtURI, "note", noteURI)
 	}
