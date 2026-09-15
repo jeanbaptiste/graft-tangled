@@ -104,7 +104,7 @@ func (c *Client) Outbox(ctx context.Context, series string) (*ap.OrderedCollecti
 // to detect in the first place, so a native AT Proto reply here would
 // silently never reach Graft for the majority of what this bridge
 // relays. Revisit if Graft ever posts an AT Proto note per issue too.
-func (c *Client) ReplyToIssue(ctx context.Context, series, issueOrPatchNoteURI, content string) error {
+func (c *Client) ReplyToIssue(ctx context.Context, series, issueOrPatchNoteURI, content, sourceURL string) error {
 	a, err := c.Actor(ctx, series)
 	if err != nil {
 		return fmt.Errorf("resolve %s actor: %w", series, err)
@@ -123,6 +123,7 @@ func (c *Client) ReplyToIssue(ctx context.Context, series, issueOrPatchNoteURI, 
 		AttributedTo: c.ActorURL,
 		InReplyTo:    issueOrPatchNoteURI,
 		Content:      content,
+URL:          sourceURL,
 		Published:    now.Format(time.RFC3339),
 		To:           []string{ap.PublicAudience},
 	}

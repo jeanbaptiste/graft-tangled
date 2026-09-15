@@ -18,7 +18,7 @@ import (
 // graftAPI is the subset of the Graft client the bridge needs.
 type graftAPI interface {
 	Outbox(ctx context.Context, series string) (*ap.OrderedCollection, error)
-	ReplyToIssue(ctx context.Context, series, noteURI, content string) error
+	ReplyToIssue(ctx context.Context, series, noteURI, content, sourceURL string) error
 }
 
 // tangledAPI is the subset of the Tangled client the bridge needs.
@@ -192,7 +192,9 @@ func (b *Bridge) reverseTangledToGraft(ctx context.Context) error {
 			continue
 		}
 		content := truncateRunes("**via Tangled, "+c.DID+":**\n\n"+c.Body, b.maxContent())
-		if err := b.Graft.ReplyToIssue(ctx, series, noteURI, content); err != nil {
+		// Generate trackback URL to the original Tangled comment (via Bluesky Web AppView)
+		sourceURL := fmt.Sprintf("https://bsky.app/profile/%s/post/%s", c.DID, rkeyFromURI(c.AtURI))
+		if err := b.Graft.ReplyToIssue(ctx, series, noteURI, content, sourceURL); err != nil {
 			b.logf(slog.LevelError, "deliver tangled comment to graft failed", "comment", c.AtURI, "err", err)
 			continue
 		}
